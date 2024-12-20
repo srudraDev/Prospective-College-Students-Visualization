@@ -63,22 +63,20 @@ d3.csv("/dataset/colleges.csv", data => {
     const xAxis = d3.axisBottom().scale(xScale);
     const yAxis = d3.axisLeft().scale(yScale);
 
-    // Tooltip for selected college
-    var tooltip = d3.select("body")
-    .append("div")
-    .attr("class", "tooltip")
-    .style("position", "absolute")
-    .style("background-color", "white")
-    .style("border", "1px solid #ccc")
-    .style("border-radius", "5px")
-    .style("padding", "10px")
-    .style("box-shadow", "0px 0px 5px rgba(0,0,0,0.3)")
-    .style("opacity", 0);
-
     var scatterPlot = d3.select("#scatterPlot")
         .append("svg:svg")
         .attr("width", scatterPlotWidth)
         .attr("height", scatterPlotHeight);
+    
+    // Define the brush
+    const brush = d3.brush()
+        .extent([[50, 30], [scatterPlotWidth - 30, scatterPlotHeight - 30]]) // Brush boundaries
+        .on("end", brushed.bind(null, "dot"));
+
+    // Add brush to the scatter plot
+    scatterPlot.append("g")
+        .attr("class", "brush")
+        .call(brush);
 
     var temp = scatterPlot.selectAll("circle")
         .data(data)
@@ -92,33 +90,7 @@ d3.csv("/dataset/colleges.csv", data => {
         })
         .attr("cx", function(d) { return xScale(d["Retention Rate (First Time Students)"]); })
         .attr("cy", function(d) { return yScale(d["Admission Rate"]); })
-        .attr("r", 4)
-        // tooltip details
-        .on("mouseover", function (d, event) {
-            const cx = xScale(d["Retention Rate (First Time Students)"]);
-            const cy = yScale(d["Admission Rate"]);
-            if (d3.select(this).classed('selected')) {
-                tooltip
-                    .html(`
-                        <strong>Admission Rate:</strong> ${+(d["Admission Rate"] * 100).toFixed(2)}%<br>
-                        <strong>Retention Rate:</strong> ${+(d["Retention Rate (First Time Students)"] * 100).toFixed(2)}%<br>
-                        <strong>College Area:</strong> ${d.Locale}<br>
-                        <strong>Type of Institution:</strong> ${d.Control}</br>
-                        <strong>Average Cost:</strong> $${d["Average Cost"]}
-                    `)
-                    .style("left", `${cx}px`)
-                    .style("top", `${cy}px`)
-                    .transition()
-                    .duration(200)
-                    .style("opacity", 1);
-            }
-        })
-        .on("mouseout", function () {
-            tooltip
-                .transition()
-                .duration(200)
-                .style("opacity", 0);
-        });
+        .attr("r", 4);
     // X-Axis Label
     scatterPlot.append("g")
         .attr("class", "x-axis")
@@ -142,7 +114,53 @@ d3.csv("/dataset/colleges.csv", data => {
         .attr("dy", ".71em")
         .style("fill", "black")
         .text("Admission Rate");
-    
+    d3.helper = {};
+    d3.helper.tooltip = function() {
+        var tooltipDiv;
+        var bodyNode = d3.select('body').node();
+        function tooltip(selection) {
+            // tooltip details
+            temp.on("mouseover", function (d, event) {
+                d3.select('body').selectAll('div.tooltip').remove();
+                tooltipDiv = d3.select("body")
+                    .append("div")
+                    .attr("class", "tooltip")
+                    .attr("z-index", 1001)
+                    .style("position", "absolute")
+                    .style("background-color", "white")
+                    .style("border", "1px solid #ccc")
+                    .style("border-radius", "5px")
+                    .style("padding", "10px")
+                    .style("box-shadow", "0px 0px 5px rgba(0,0,0,0.3)")
+                    .style("opacity", 0);
+                if (d3.select(this).classed('selected')) {
+                    console.log("HERRO " + d3.mouse(bodyNode));
+                    tooltipDiv.style("opacity", 1)
+                        .html(`
+                            <strong>Admission Rate:</strong> ${+(d["Admission Rate"] * 100).toFixed(2)}%<br>
+                            <strong>Retention Rate:</strong> ${+(d["Retention Rate (First Time Students)"] * 100).toFixed(2)}%<br>
+                            <strong>College Area:</strong> ${d.Locale}<br>
+                            <strong>Type of Institution:</strong> ${d.Control}</br>
+                            <strong>Average Cost:</strong> $${d["Average Cost"]}
+                        `)
+                        .style("left", `${d3.mouse(bodyNode)[0] + 10}px`)
+                        .style("top", `${d3.mouse(bodyNode)[1] - 40}px`);
+                }
+            })
+            .on('mousemove.tooltip', function(pD, pI){
+                // Move tooltip
+                var absoluteMousePos = d3.mouse(bodyNode);
+                tooltipDiv
+                    .style("left", (absoluteMousePos[0] + 10)+'px')
+                    .style("top", (absoluteMousePos[1] - 40)+'px');
+            })
+            .on("mouseout", function () {
+                tooltipDiv.remove();
+            });
+        }
+        return tooltip;
+    }
+    temp.call(d3.helper.tooltip());
     // stream all college names into dropdown
     populateDropdown(collegeData);
 
@@ -361,6 +379,32 @@ d3.csv("/dataset/colleges.csv", data => {
         .style("font-size", "15px")
         .style("text-decoration", "underline")
         .text("Median Debt of a Student");
+    
+    function brushed() {
+        const selection = d3.event.selection;
+        if (!selection) {
+            document.getElementById("public").innerHTML = ""; // Reset public percentage
+            document.getElementById("private").innerHTML = ""; // Reset private percentage
+            return; // Exit if no area is brushed
+        }
+        var [[x0, y0], [x1, y1]] = selection; // Extract brush boundaries
+        var brushedColleges = collegeData.filter(d => {
+            var x = xScale(d["Retention Rate (First Time Students)"]);
+            var y = yScale(d["Admission Rate"]);
+            return x >= x0 && x <= x1 && y >= y0 && y <= y1; // Filter points in brushed area
+        });
+        // Calculate percentages of public vs private colleges
+        const total = brushedColleges.length;
+        const publicCount = brushedColleges.filter(d => d.Control === "Public").length;
+        const privateCount = total - publicCount;
+
+        const publicPercentage = ((publicCount / total) * 100).toFixed(2);
+        const privatePercentage = ((privateCount / total) * 100).toFixed(2);
+
+        // display percentages
+        document.getElementById("public").innerHTML = publicPercentage + "%";
+        document.getElementById("private").innerHTML = privatePercentage + "%";
+    }
 })
 
 function populateDropdown(data) {
@@ -369,12 +413,12 @@ function populateDropdown(data) {
         selector.options.add(new Option(d.Name, d.Name));
     });
 }
+
 // On-change function when dropdown selection occurs
 function generateGraphs() {
     // reset input feature
     document.getElementById("cutoff").value = "0";
     filterScatterPlot();
-
     // find selected college
     var e = document.getElementById("selectCollege");
     var selectedCollegeName = e.options[e.selectedIndex].text;
@@ -460,6 +504,7 @@ function updateBarChart(college) {
         .call(d3.axisLeft(y));
 }
 // onInput function that filter Retention Rates
+
 function filterScatterPlot() {
     const minVal = parseFloat(document.getElementById("cutoff").value);
     if (isNaN(minVal) || minVal < 0 || minVal > 1) {
@@ -468,7 +513,6 @@ function filterScatterPlot() {
     // Make sure selected College dissappears when its retention rate is outside minimum
     var e = document.getElementById("selectCollege");
     var selectedCollegeName = e.options[e.selectedIndex].text;
-
     // Filter the data based on the retention rate cutoff
     const filteredData = collegeData.filter(d => d["Retention Rate (First Time Students)"] >= minVal);
     // Update scatter plot with filtered data
@@ -478,10 +522,9 @@ function filterScatterPlot() {
     // Update circles in the scatter plot
     var scatterPlot = d3.select("#scatterPlot svg");
     var circles = scatterPlot.selectAll("circle").data(filteredData);
-    var tooltip = d3.select(".tooltip");
+    var bodyNode = d3.select('body').node();
     // Update X-Axis
     scatterPlot.select("g.x-axis").transition().duration(500).call(xAxis);
-
     // Exit: Remove circles for data points no longer in the dataset
     circles.exit().remove();
     // Enter: Add new circles for filtered data points
@@ -499,11 +542,25 @@ function filterScatterPlot() {
                 this.parentNode.appendChild(this); // Move selected circle to the top
             }
         });
+    var tooltipDiv;
+    // Tooltip details
     circles.on("mouseover", function (d, event) {
+        d3.select('body').selectAll('div.tooltip').remove();
+        tooltipDiv = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .attr("z-index", 1001)
+            .style("position", "absolute")
+            .style("background-color", "white")
+            .style("border", "1px solid #ccc")
+            .style("border-radius", "5px")
+            .style("padding", "10px")
+            .style("box-shadow", "0px 0px 5px rgba(0,0,0,0.3)")
+            .style("opacity", 0);
         const cx = xScale(d["Retention Rate (First Time Students)"]);
         const cy = yScale(d["Admission Rate"]);
         if (d3.select(this).classed('selected')) {
-            tooltip
+            tooltipDiv
                 .html(`
                     <strong>Admission Rate:</strong> ${(d["Admission Rate"] * 100).toFixed(2)}%<br>
                     <strong>Retention Rate:</strong> ${(d["Retention Rate (First Time Students)"] * 100).toFixed(2)}%<br>
@@ -518,7 +575,14 @@ function filterScatterPlot() {
                 .style("opacity", 1);
         }
     })
+    .on('mousemove.tooltip', function(pD, pI){
+        // Move tooltip
+        var absoluteMousePos = d3.mouse(bodyNode);
+        tooltipDiv
+            .style("left", (absoluteMousePos[0] + 10)+'px')
+            .style("top", (absoluteMousePos[1] - 40)+'px');
+    })
     .on("mouseout", function () {
-        tooltip.transition().duration(200).style("opacity", 0);
+        tooltipDiv.remove();
     });
 }
