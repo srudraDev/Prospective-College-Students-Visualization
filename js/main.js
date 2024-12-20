@@ -383,8 +383,7 @@ d3.csv("/dataset/colleges.csv", data => {
     function brushed() {
         const selection = d3.event.selection;
         if (!selection) {
-            document.getElementById("public").innerHTML = ""; // Reset public percentage
-            document.getElementById("private").innerHTML = ""; // Reset private percentage
+            document.getElementById("pubpriv").innerHTML = ""; // Reset percentages
             return; // Exit if no area is brushed
         }
         var [[x0, y0], [x1, y1]] = selection; // Extract brush boundaries
@@ -402,8 +401,7 @@ d3.csv("/dataset/colleges.csv", data => {
         const privatePercentage = ((privateCount / total) * 100).toFixed(2);
 
         // display percentages
-        document.getElementById("public").innerHTML = publicPercentage + "%";
-        document.getElementById("private").innerHTML = privatePercentage + "%";
+        document.getElementById("pubpriv").innerHTML = `<strong>Public: </strong>${publicPercentage}%     <strong>Private: </strong>${privatePercentage}%`;
     }
 })
 
