@@ -34,7 +34,7 @@ function createDemographicDict(college) {
     return raceData;
 }
 
-d3.csv("/dataset/colleges.csv", data => {
+d3.csv("dataset/colleges.csv", data => {
     // Reformatting and initializing data
     collegeData = data.map(d => {
         d.White = (+d["% White"] * 100).toFixed(2);
