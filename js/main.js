@@ -53,8 +53,15 @@ d3.csv("dataset/colleges.csv", data => {
     // Static text
     document.getElementById("ACT").innerHTML = college["ACT Median"];
     document.getElementById("SAT").innerHTML = college["SAT Average"];
+    drawScatterPlot(collegeData);
+    // stream all college names into dropdown
+    populateDropdown(collegeData);
+    drawPieChart(raceData);
+    drawBarChart(college);
+})
 
-    // Scatter plot
+// Scatter plot
+function drawScatterPlot(data) {
     const arExtent = d3.extent(data, function(row) { return row["Admission Rate"];});
     const rrExtent = d3.extent(data, function(row) { return row["Retention Rate (First Time Students)"];});
     const xScale = d3.scaleLinear().domain(rrExtent).range([50,570]);
@@ -78,7 +85,11 @@ d3.csv("dataset/colleges.csv", data => {
         .attr("class", "brush")
         .call(brush);
 
-    var temp = scatterPlot.selectAll("circle")
+    // Shared size scale for all circles
+    const sizeScale = d3.scaleSqrt()
+        .domain(d3.extent(data, d => +d["Undergrad Population"]))
+        .range([2, 10]);
+    var circle = scatterPlot.selectAll("circle")
         .data(data)
         .enter()
         .append("circle")
@@ -86,11 +97,11 @@ d3.csv("dataset/colleges.csv", data => {
         .attr('fill', 'steelblue')
         .attr("stroke", "blue")
         .classed('selected', function(m) {
-            return m.Name === college.Name;
+            return m.Name === data[0].Name;
         })
         .attr("cx", function(d) { return xScale(d["Retention Rate (First Time Students)"]); })
         .attr("cy", function(d) { return yScale(d["Admission Rate"]); })
-        .attr("r", 4);
+        .attr("r", d => sizeScale(+d["Undergrad Population"]));
     // X-Axis Label
     scatterPlot.append("g")
         .attr("class", "x-axis")
@@ -120,7 +131,7 @@ d3.csv("dataset/colleges.csv", data => {
         var bodyNode = d3.select('body').node();
         function tooltip(selection) {
             // tooltip details
-            temp.on("mouseover", function (d, event) {
+            circle.on("mouseover", function (d, event) {
                 d3.select('body').selectAll('div.tooltip').remove();
                 tooltipDiv = d3.select("body")
                     .append("div")
@@ -160,13 +171,63 @@ d3.csv("dataset/colleges.csv", data => {
         }
         return tooltip;
     }
-    temp.call(d3.helper.tooltip());
-    // stream all college names into dropdown
-    populateDropdown(collegeData);
+    circle.call(d3.helper.tooltip());
+    function brushed() {
+        const selection = d3.event.selection;
+        if (!selection) {
+            document.getElementById("pubpriv").innerHTML = ""; // Reset percentages
+            return; // Exit if no area is brushed
+        }
+        var [[x0, y0], [x1, y1]] = selection; // Extract brush boundaries
+        var brushedColleges = collegeData.filter(d => {
+            var x = xScale(d["Retention Rate (First Time Students)"]);
+            var y = yScale(d["Admission Rate"]);
+            return x >= x0 && x <= x1 && y >= y0 && y <= y1; // Filter points in brushed area
+        });
+        // Calculate percentages of public vs private colleges
+        const total = brushedColleges.length;
+        const publicCount = brushedColleges.filter(d => d.Control === "Public").length;
+        const privateCount = total - publicCount;
 
+        const publicPercentage = ((publicCount / total) * 100).toFixed(2);
+        const privatePercentage = ((privateCount / total) * 100).toFixed(2);
 
-    // PIE chart
+        // display percentages
+        document.getElementById("pubpriv").innerHTML = `<strong>Public: </strong>${publicPercentage}%     <strong>Private: </strong>${privatePercentage}%`;
+    }
 
+    // Add legend for size encoding
+    const legendSvg = d3.select("#scatterPlot")
+        .append("svg")
+        .attr("width", 200)
+        .attr("height", 100)
+        .style("margin-left", "10px");
+
+    const legendSizes = [1000, 10000, 30000];
+    legendSvg.selectAll("circle")
+        .data(legendSizes)
+        .enter()
+        .append("circle")
+        .attr("cx", 40)
+        .attr("cy", (d, i) => 30 + i * 25)
+        .attr("r", d => sizeScale(d))
+        .attr("fill", "steelblue")
+        .attr("stroke", "blue");
+
+    legendSvg.selectAll("text")
+        .data(legendSizes)
+        .enter()
+        .append("text")
+        .attr("x", 80)
+        .attr("y", (d, i) => 30 + i * 25)
+        .attr("dy", "0.35em")
+        .text(d => d.toLocaleString() + " undergrads")
+        .style("font-size", "10px");
+}
+
+// PIE chart
+
+function drawPieChart(data) {
     const opacity = 0.8;
     const opacityHover = 1;
     const otherHover = 0.8;
@@ -187,7 +248,7 @@ d3.csv("dataset/colleges.csv", data => {
         .sort(null);
 
     const path = g.selectAll('path')
-        .data(pie(raceData))
+        .data(pie(data))
         .enter()
         .append("g")
         .append('path')
@@ -270,7 +331,7 @@ d3.csv("dataset/colleges.csv", data => {
         .style('margin-top', '30px');
     // Keys for dissecting each color
     var keys = legend.selectAll('.key')
-        .data(raceData)
+        .data(data)
         .enter().append('div')
         .attr('class', 'key')
         .style('display', 'flex')
@@ -297,7 +358,9 @@ d3.csv("dataset/colleges.csv", data => {
         .attr("text-anchor", "middle")
         .style("font-size", "16px")
         .text("Demographics of College");
+}
 
+function drawBarChart(college) {
     // BAR chart
 
     // set ranges
@@ -329,10 +392,6 @@ d3.csv("dataset/colleges.csv", data => {
         .rangeRound([0, barChartWidth])
         .paddingInner(0.05);
 
-    var barYScale = d3.scaleLinear()
-        .domain([0, d3.max(count) + 4000])
-        .range([0, barChartHeight]);
-
     barChart.selectAll("rect")
         .data(count)
         .enter()
@@ -341,11 +400,11 @@ d3.csv("dataset/colleges.csv", data => {
             return barXScale(i);
         })
         .attr("y", function (d) {
-            return barChartHeight - barYScale(d);
+            return y(d);
         })
         .attr("width", barXScale.bandwidth())
         .attr("height", function (d) {
-            return barYScale(d);
+            return barChartHeight - y(d);
         })
         .attr("fill", function (d) {
             // red
@@ -379,31 +438,7 @@ d3.csv("dataset/colleges.csv", data => {
         .style("font-size", "15px")
         .style("text-decoration", "underline")
         .text("Median Debt of a Student");
-    
-    function brushed() {
-        const selection = d3.event.selection;
-        if (!selection) {
-            document.getElementById("pubpriv").innerHTML = ""; // Reset percentages
-            return; // Exit if no area is brushed
-        }
-        var [[x0, y0], [x1, y1]] = selection; // Extract brush boundaries
-        var brushedColleges = collegeData.filter(d => {
-            var x = xScale(d["Retention Rate (First Time Students)"]);
-            var y = yScale(d["Admission Rate"]);
-            return x >= x0 && x <= x1 && y >= y0 && y <= y1; // Filter points in brushed area
-        });
-        // Calculate percentages of public vs private colleges
-        const total = brushedColleges.length;
-        const publicCount = brushedColleges.filter(d => d.Control === "Public").length;
-        const privateCount = total - publicCount;
-
-        const publicPercentage = ((publicCount / total) * 100).toFixed(2);
-        const privatePercentage = ((privateCount / total) * 100).toFixed(2);
-
-        // display percentages
-        document.getElementById("pubpriv").innerHTML = `<strong>Public: </strong>${publicPercentage}%     <strong>Private: </strong>${privatePercentage}%`;
-    }
-})
+}
 
 function populateDropdown(data) {
     const selector = document.getElementById('selectCollege');
@@ -481,10 +516,6 @@ function updateBarChart(college) {
         .range([barChartHeight, 0]);
     y.domain([0, d3.max(count) + 4000]);
     x.domain(medianTitles);
-    var barYScale = d3.scaleLinear()
-        .domain([0, d3.max(count) + 4000])
-        .range([0, barChartHeight]);
-    
     // Update bars with new data
     var bars = d3.select("#barChart").selectAll("rect")
         .data(count);
@@ -492,8 +523,8 @@ function updateBarChart(college) {
     // Transform existing bars
     bars.transition() // Smooth transition for existing bars
         .duration(750)
-        .attr("y", function(d) { return barChartHeight - barYScale(d); })
-        .attr("height", function(d) { return barYScale(d); });
+        .attr("y", function(d) { return y(d); })
+        .attr("height", function(d) { return barChartHeight - y(d); });
 
     // Update Y-Axis as max Y-scale may be higher or lower
     d3.select("#barChart").select(".y-axis")
@@ -521,6 +552,10 @@ function filterScatterPlot() {
     var scatterPlot = d3.select("#scatterPlot svg");
     var circles = scatterPlot.selectAll("circle").data(filteredData);
     var bodyNode = d3.select('body').node();
+    // Shared size scale for filtered data
+    const sizeScale = d3.scaleSqrt()
+        .domain(d3.extent(filteredData, d => +d["Undergrad Population"]))
+        .range([2, 10]);
     // Update X-Axis
     scatterPlot.select("g.x-axis").transition().duration(500).call(xAxis);
     // Exit: Remove circles for data points no longer in the dataset
@@ -531,7 +566,7 @@ function filterScatterPlot() {
         .merge(circles)
         .attr("cx", d => xScale(d["Retention Rate (First Time Students)"]))
         .attr("cy", d => yScale(d["Admission Rate"]))
-        .attr("r", 4)
+        .attr("r", d => sizeScale(+d["Undergrad Population"]))
         .attr("fill", "steelblue")
         .attr("stroke", "blue")
         .classed('selected', d => d.Name === selectedCollegeName)
